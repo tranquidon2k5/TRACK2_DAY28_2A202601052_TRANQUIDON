@@ -105,3 +105,38 @@ Tuân thủ phân vai theo chuẩn `docs/team-role-cards.md`:
 | **Serving & Retrieval Engineer** | Tích hợp vector store Qdrant, đồng bộ điểm dữ liệu từ Delta, cấu hình client vLLM và logic degraded mode | **IP05, IP07** | - Index 13 documents thành công<br/>- Xử lý cơ chế degraded mode khi thiếu GPU |
 | **Platform & Observability Engineer** | Cấu hình Envoy Gateway (Rate limit, Request-ID), OpenTelemetry Collector, Prometheus metrics, Grafana dashboard và GitOps manifests | **IP08, IP09, IP10** | - Cài đặt hàm `readiness_status`<br/>- Passed toàn bộ bài test metrics, tracing, manifests |
 | **Presenter / Incident Commander** | Điều phối kịch bản demo theo Demo Runbook, thu thập evidence pack, phân tích sự cố và trả lời phản biện Q&A | Toàn bộ kịch bản demo | - Thu thập trọn vẹn 10 evidence files<br/>- Viết tài liệu báo cáo kỹ thuật |
+
+---
+
+## 6. Happy-Path Trace & Version Binding (Tiêu chí 4)
+
+Minh chứng định danh và liên kết phiên bản dữ liệu xuyên suốt hành trình (Happy-path Journey J1):
+- **Trace ID**: `6b7b2554e92f4619b76a41d26cf6039f` (chuẩn W3C `traceparent: 00-6b7b...-ed21...-01`)
+- **Pipeline Run ID (Airflow)**: `it-cb64f62f` (DAG `lab28_ingestion_pipeline`)
+- **Delta Lake Table Version**: Version `1` (bảng `feedback` và `documents`, xác thực qua `evidence/ip03-delta-history.json`)
+- **MLflow Champion Model Version**: Release `v2` (`run_id: e6a6ce4740ca4bd7ab9488b5b4d44f31`, xác thực qua `evidence/ip06-mlflow-release.json`)
+- **Trace Span Continuity**: Toàn bộ 6/6 span cốt lõi đã được ghi nhận đầy đủ trên Jaeger (`lab28.gateway.request` -> `lab28.api.ingest` -> `lab28.kafka.produce` -> `lab28.kafka.consume` -> `lab28.airflow.dag` -> `lab28.spark.delta_merge`).
+
+---
+
+## 7. Khả Năng Chống Chịu Sự Cố & Bằng Chứng Không Mất Dữ Liệu (Tiêu chí 5)
+
+1. **Nguyên lý Offsets Move Last (Commit sau cùng)**:
+   - Kafka consumer chỉ commit offset sau khi Spark MERGE thành công vào Delta Lake và ghi nhận transaction log. Nếu worker crash giữa chừng, batch tin nhắn sẽ được redeliver ở lần chạy tiếp theo mà không làm thất thoát dữ liệu.
+2. **Idempotency Proof (Hành trình J2 Replay)**:
+   - Khi phát lại cùng một tập tin nhắn mang `idempotency_key` cũ, câu lệnh `MERGE INTO delta ... WHEN MATCHED UPDATE` cập nhật đè lên bản ghi cũ dựa trên hàm `dedupe_latest(events)` mà không sinh thêm dòng mới trong Delta Lake.
+3. **Dead Letter Queue (DLQ Isolation)**:
+   - Bất kỳ message độc hại hoặc sai định dạng payload JSON đều được bẫy lại và định tuyến sang topic `data.raw.dlq` (`lab28-dlq-envelope`), bảo vệ pipeline không bị tắc nghẽn vô hạn mà vẫn giữ lại toàn bộ context để điều tra.
+
+---
+
+## 8. Kiểm Định Kubernetes & GitOps Manifests (Tiêu chí 7)
+
+- **Hợp đồng Manifests**: Kiểm tra tự động bằng `scripts/validate_manifests.py` đạt chuẩn 100% (`Kubernetes and GitOps manifest contracts passed`).
+- **Phân tách môi trường**:
+  - `gitops/apps/`: Quản lý khai báo Application Controller cho từng môi trường `staging` và `production`.
+  - `gitops/infrastructure/`: Quản lý các tài nguyên nền tảng (Kafka Strimzi Operator, Prometheus Operator, Envoy Ingress Gateway).
+- **Drift Detection & Rollback Policy**:
+  - Kích hoạt cơ chế `selfHeal: true` và `prune: true` trong ArgoCD Application spec để tự động phát hiện và triệt tiêu mọi cấu hình lệch (drift) ngoài ý muốn.
+  - Chính sách rollback tự động kích hoạt khi deployment health check thất bại hoặc số lượng pod restart vượt ngưỡng cho phép.
+

@@ -180,6 +180,7 @@ services:
         exec airflow standalone
     environment:
       <<: *lab-environment
+      PYTHONPATH: /workspace/src
       AIRFLOW_HOME: /opt/airflow
       AIRFLOW__CORE__DAGS_FOLDER: /workspace/airflow/dags
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"

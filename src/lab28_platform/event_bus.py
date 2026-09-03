@@ -266,10 +266,14 @@ class BatchConsumer:
         decoded: list[ConsumedMessage] = []
         poison: list[DeadLetterEnvelope] = []
         idle = 0
+        assignment_wait = 0
 
         while len(decoded) + len(poison) < max_messages and idle < idle_polls:
             message = self._consumer.poll(poll_timeout)
             if message is None:
+                if not self._consumer.assignment() and assignment_wait < 15:
+                    assignment_wait += 1
+                    continue
                 idle += 1
                 continue
             if message.error():
