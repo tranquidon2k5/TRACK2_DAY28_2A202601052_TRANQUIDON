@@ -20,7 +20,11 @@ def event_headers(
     ``idempotency-key`` is always required.  Omit ``traceparent`` when no trace
     is active rather than sending an empty, invalid W3C header.
     """
-    raise NotImplementedError("TODO IP01/IP10: propagate trace and idempotency headers")
+    headers: list[tuple[str, bytes]] = []
+    if traceparent:
+        headers.append(("traceparent", traceparent.encode("utf-8")))
+    headers.append(("idempotency-key", idempotency_key.encode("utf-8")))
+    return headers
 
 
 def dedupe_latest(events: Iterable[IngestionEvent]) -> list[IngestionEvent]:
@@ -29,14 +33,43 @@ def dedupe_latest(events: Iterable[IngestionEvent]) -> list[IngestionEvent]:
     Compare ``(occurred_at, event_id)`` so ties do not depend on Kafka delivery
     order.  The Spark Delta MERGE calls this through ``delta_store``.
     """
-    raise NotImplementedError("TODO IP03: prepare a replay-safe Delta MERGE source")
+    latest_map: dict[str, IngestionEvent] = {}
+    for event in events:
+        key = event.idempotency_key
+        if key not in latest_map:
+            latest_map[key] = event
+        else:
+            current = latest_map[key]
+            if (event.occurred_at, event.event_id) > (current.occurred_at, current.event_id):
+                latest_map[key] = event
+    return [latest_map[k] for k in sorted(latest_map.keys())]
 
 
 def feast_online_request(asker_id: str) -> dict[str, Any]:
     """Build the Feast ``/get-online-features`` request for ``asker_activity_v1``."""
-    raise NotImplementedError("TODO IP04: preserve the feature registry contract")
+    return {
+        "entities": {"asker_id": [asker_id]},
+        "features": [
+            "asker_activity_v1:feedback_count",
+            "asker_activity_v1:avg_rating",
+            "asker_activity_v1:negative_ratio",
+            "asker_activity_v1:delta_version",
+        ],
+        "full_feature_names": False,
+    }
 
 
 def readiness_status(probes: Iterable[dict[str, Any]]) -> str:
     """Return ``ready``, ``degraded`` or ``not_ready`` from probe severity."""
-    raise NotImplementedError("TODO IP07/IP08: implement explicit readiness semantics")
+    has_degraded = False
+    for probe in probes:
+        ready = probe.get("ready", False)
+        mandatory = probe.get("mandatory", True)
+        if not ready:
+            if mandatory:
+                return "not_ready"
+            has_degraded = True
+    if has_degraded:
+        return "degraded"
+    return "ready"
+

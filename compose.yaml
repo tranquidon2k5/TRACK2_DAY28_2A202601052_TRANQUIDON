@@ -221,6 +221,7 @@ services:
       dockerfile: docker/api/Dockerfile
     environment:
       <<: *lab-environment
+      PYTHONPATH: /workspace/src
       LAB28_VLLM_BASE_URL: ${LAB28_VLLM_BASE_URL:-http://host.docker.internal:8001/v1}
       LAB28_VLLM_MODEL_ID: ${LAB28_VLLM_MODEL_ID:-Qwen/Qwen3-1.7B}
       LAB28_VLLM_REQUIRE_REAL: ${LAB28_VLLM_REQUIRE_REAL:-false}
